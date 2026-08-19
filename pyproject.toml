@@ -1,0 +1,18 @@
+[project]
+name = "tinytrader"
+version = "0.2.0"
+description = "Light Weight C++ Trading Engine with Python Binding"
+authors = [{name = "tinytrader", email = "tinytrader@163.com"}]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.9, <3.14"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+]
