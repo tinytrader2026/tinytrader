@@ -5,8 +5,6 @@ TinyTrader - Lightweight C++ trading engine with Python bindings
 import sys
 import importlib.util
 import os
-from datetime import datetime, timedelta, timezone
-import time
 from importlib.metadata import version
 
 __version__ = version("tinytrader")
@@ -114,33 +112,6 @@ def AutoRun(config, strategy_class, *args, **kwargs):
 
 
 
-def TodayAt(time_str: str):
-	"""获取当日指定时间点。
-	Args:
-		time (str): 时间字符串，格式 "HH:MM:SS"
-	Returns:
-		datetime.datetime: 当日指定时间点
-	"""
-	h, m, s = map(int, time_str.split(':'))
-	return Now().replace(hour=h, minute=m, second=s, microsecond=0)
-
-
-
-def _make_time_property(original_prop):
-	def getter(self):
-		offset = time.timezone if time.daylight == 0 else time.altzone
-		dt = original_prop.fget(self) + timedelta(seconds=offset)
-		return dt
-	return property(getter)
-
-# nonobind 自动使用 local_time，需进行修正
-Quote.MarketTime = _make_time_property(Quote.MarketTime)
-Quote.ReceiveTime = _make_time_property(Quote.ReceiveTime)
-
-
-
-
-
 # ========== 类文档 ==========
 
 Contract.__doc__ = """
@@ -213,7 +184,6 @@ Order.__doc__ = """
 
 方法：
 	Terminated() -> bool: 订单是否已结束（Filled / Canceled / Rejected）
-	Cancelable() -> bool: 订单是否可撤（Queuing 且无撤单在途）
 	AveragePrice() -> float: 成交均价
 """
 
@@ -254,9 +224,9 @@ Config.__doc__ = """
 字段说明：
 	UserID (str): 资金账号
 	Password (str): 密码
+	BrokerID (str): 经纪公司代码
 	AppID (str): AppID
 	AuthCode (str): 授权码
-	BrokerID (str): 经纪公司代码
 	TradeFront (str): 交易前置地址
 	MarketFront (str): 行情前置地址
 	LogPath (str): 日志文件路径

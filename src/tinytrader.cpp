@@ -7,24 +7,13 @@
 #include <set>
 #include <unordered_map>
 #include <variant>
-
-#ifdef TINYTRADER_PYTHON_BINDINGS
-#include <pybind11/embed.h>
-#endif
+#include <queue>
 
 using namespace std;
 using namespace chrono;
 using namespace tinytrader;
 
 namespace {
-	void CheckPythonSignals() {
-#ifdef TINYTRADER_PYTHON_BINDINGS
-		pybind11::gil_scoped_acquire acquire;
-		if (PyErr_CheckSignals())
-			throw runtime_error("Interrupted by user");
-#endif
-	}
-
 	bool gStop = false;
 
 	void SignalHandler(int sig)
@@ -167,7 +156,6 @@ namespace {
 				if (Now() > beg + 60s)
 					throw runtime_error(fmt::format("{} init timeout", name));
 				this_thread::sleep_for(20ms);
-				CheckPythonSignals();
 			}
 
 			if (mStatus < 0)
@@ -176,7 +164,7 @@ namespace {
 
 		template <typename... Args>
 		void SetError(const char* fmtStr, Args&&... args) {
-			mErrMsg = fmt::format(fmtStr, forward<Args>(args)...);
+			mErrMsg = fmt::format(fmt::runtime(fmtStr), forward<Args>(args)...);
 			atomic_thread_fence(memory_order_release);
 			mStatus = -1;
 		}
@@ -357,21 +345,24 @@ namespace {
 			return TradeFlag::Close;
 		}
 
-		static void SetFlag(NewOrder& order)
+		static char CTPFlag(const NewOrder& order)
 		{
+			static constexpr char values[] = { 0, THOST_FTDC_OF_Open, THOST_FTDC_OF_Close, THOST_FTDC_OF_CloseToday, THOST_FTDC_OF_CloseYesterday };
+
+			auto flag = TradeFlag::Open;
 			if (order.Flag == TradeFlag::Auto) {
-				order.Flag = TradeFlag::Open;
 				Position p = GetPosition(order.Instrument);
 				int n = abs(order.Size);
 				if (Market m = order.Instrument.Exchange(); m == Market::SHFE || m == Market::INE) {
 					if (order.Size > 0 && p.ShortToday >= n || order.Size < 0 && p.LongToday >= n)
-						order.Flag = TradeFlag::CloseToday;
+						flag = TradeFlag::CloseToday;
 					else if (order.Size > 0 && (p.Short - p.ShortToday) >= n || order.Size < 0 && (p.Long - p.LongToday) >= n)
-						order.Flag = TradeFlag::CloseYesterday;
+						flag = TradeFlag::CloseYesterday;
 				}
 				else if (order.Size > 0 && p.Short >= n || order.Size < 0 && p.Long >= n)
-					order.Flag = TradeFlag::Close;
+					flag = TradeFlag::Close;
 			}
+			return values[static_cast<int>(flag)];
 		}
 
 		template<typename T>
@@ -407,10 +398,8 @@ namespace {
 				logi("PositionEntry: {}", e);
 		}
 
-		int Insert(NewOrder& newOrder)
+		int Insert(const NewOrder& newOrder)
 		{
-			static constexpr char flags[] = { 0, THOST_FTDC_OF_Open, THOST_FTDC_OF_Close, THOST_FTDC_OF_CloseToday, THOST_FTDC_OF_CloseYesterday };
-
 			CThostFtdcInputOrderField req = {};
 			strcpy_safe(req.BrokerID, mConfig->BrokerID);
 			strcpy_safe(req.InvestorID, mConfig->UserID);
@@ -422,8 +411,7 @@ namespace {
 
 			strcpy_safe(req.InstrumentID, newOrder.Instrument.Code());
 			req.Direction = newOrder.Size > 0 ? THOST_FTDC_D_Buy : THOST_FTDC_D_Sell;
-			SetFlag(newOrder);
-			req.CombOffsetFlag[0] = flags[static_cast<int>(newOrder.Flag)];
+			req.CombOffsetFlag[0] = CTPFlag(newOrder);
 			req.LimitPrice = newOrder.Price;
 			req.VolumeTotalOriginal = abs(newOrder.Size);
 			req.TimeCondition = (newOrder.Type == OrderType::FAK || newOrder.Type == OrderType::FOK) ? THOST_FTDC_TC_IOC : THOST_FTDC_TC_GFD;
@@ -686,14 +674,27 @@ namespace {
 
 	class CTPEngine
 	{
+		struct Task
+		{
+			TimePoint ExecuteTime;
+			function<void()> Func;
+
+			bool operator>(const Task& other) const
+			{
+				return ExecuteTime > other.ExecuteTime;
+			}
+		};
+
 	public:
 		void Init(const Config& cfg, bool CacheOnly = false)
 		{
+			signal(SIGINT, SignalHandler);
+
 			atexit([]() {
 				logi("========================= end ========================");
 				fmtlog::stopPollingThread();
 				fmtlog::poll(true);
-			});
+				});
 
 			mConfig = cfg;
 			if (!mConfig.LogPath.empty())
@@ -707,12 +708,9 @@ namespace {
 
 		void Run(Strategy& s)
 		{
-			signal(SIGINT, SignalHandler);
-
 			s.OnStart();
 			mMarket.Init(&mConfig, s.SubscribeList());
-			auto ms = milliseconds(mConfig.TimerInterval);
-			for (TimePoint tp = Now() + ms; !gStop;) {
+			while (!gStop) {
 				int n = 0;
 				for (auto q = mMarket.Pop(); q; q = mMarket.Pop()) {
 					s.OnQuote(*q);
@@ -722,18 +720,17 @@ namespace {
 					visit([this, &s](auto&& arg) { Handle(arg, s); }, *msg);
 					++n;
 				}
-				if (Now() >= tp) {
-					s.OnTimer();
-					tp = Now() + ms;
+				for (auto now = Now(); !mTasks.empty() && mTasks.top().ExecuteTime <= now;) {
+					mTasks.top().Func();
+					mTasks.pop();
 					++n;
-					CheckPythonSignals();
 				}
 				if (!n && mConfig.SleepOnIdle)
 					this_thread::sleep_for(50us);
 			}
 		}
 
-		const Order* Insert(NewOrder& newOrder)
+		const Order* Insert(const NewOrder& newOrder)
 		{
 			if (mCount >= mConfig.MaxOrderCount)
 				loge("exceed MaxOrderCount {}", mConfig.MaxOrderCount);
@@ -752,6 +749,11 @@ namespace {
 			if (mGateway.Cancel(order))
 				return const_cast<Order&>(order).Canceling = true;
 			return false;
+		}
+
+		void ScheduleTask(int delay, function<void()> task)
+		{
+			mTasks.emplace(Now() + milliseconds(delay), move(task));
 		}
 
 	private:
@@ -794,6 +796,7 @@ namespace {
 		unique_ptr<Order[]> mOrders;
 		CTPGateway mGateway;
 		CTPMarket mMarket;
+		priority_queue<Task, vector<Task>, greater<Task>> mTasks;
 	};
 
 	CTPEngine gEngine;
@@ -830,7 +833,7 @@ namespace tinytrader {
 		return gRegistry[mIndex].Multiplier;
 	}
 
-	const Order* Strategy::Insert(NewOrder& newOrder)
+	const Order* Strategy::Insert(const NewOrder& newOrder)
 	{
 		return gEngine.Insert(newOrder);
 	}
@@ -840,7 +843,10 @@ namespace tinytrader {
 		return gEngine.Cancel(order);
 	}
 
-	using days = duration<int, ratio<86400>>;
+	void Strategy::ScheduleTask(int delay, function<void()> task)
+	{
+		gEngine.ScheduleTask(delay, move(task));
+	}
 
 	TimePoint TodayAt(string_view time)
 	{

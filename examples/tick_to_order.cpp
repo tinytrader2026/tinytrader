@@ -1,4 +1,4 @@
-#include "tinytrader.h"
+#include "simnow.h"
 #include <numeric>
 
 using namespace std;
@@ -6,7 +6,7 @@ using namespace chrono;
 using namespace tinytrader;
 
 namespace {		// 使用匿名命名空间，防止名称冲突
-	class TickToTrade : public Strategy		// 收到行情立即下单，以测试内部延迟
+	class TickToOrder : public Strategy		// 收到行情立即下单，以测试内部延迟
 	{
 		Contract mInstrument = "rb2610";
 		vector<nanoseconds> mLatencies;
@@ -31,7 +31,7 @@ namespace {		// 使用匿名命名空间，防止名称冲突
 			double p95 = to_us(mLatencies[n * 95 / 100]);
 			double p99 = to_us(mLatencies[n * 99 / 100]);
 
-			fmt::print("\n========== Tick-to-Trade 延迟统计 ==========\n");
+			fmt::print("\n========== Tick-to-Order 延迟统计 ==========\n");
 			fmt::print("样本数: {}\n", n);
 			fmt::print("平均值: {:.1f} μs\n", avg);
 			fmt::print("最小值: {:.1f} μs\n", min);
@@ -83,15 +83,6 @@ namespace {		// 使用匿名命名空间，防止名称冲突
 
 int main()
 {
-	Config config;
-	config.UserID = "12345678";
-	config.Password = "my_password";
-	config.AppID = "simnow_client_test";
-	config.AuthCode = "0000000000000000";
-	config.BrokerID = "9999";
-	config.TradeFront = "tcp://182.254.243.31:30002";
-	config.MarketFront = "tcp://182.254.243.31:30012";
-	config.CachePath = "D:/test/contracts.bin";
-
-	return AutoRun<TickToTrade>(config);
+	Config config = SimnowConfig();
+	return AutoRun<TickToOrder>(config);
 }

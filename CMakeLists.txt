@@ -10,7 +10,7 @@ endif()
 
 project(TinyTrader)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -18,7 +18,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 # =========================== 选项 ===========================
-option(PYTHON_BINDINGS "Build Python bindings using pybind11" OFF)
+option(PYTHON_BINDINGS "Build Python bindings using nanobind" OFF)
 
 # =========================== 目录设置 ===========================
 set(FMT         ${CMAKE_SOURCE_DIR}/third_party/fmt-12.2.0)
@@ -51,7 +51,7 @@ function(add_ctp_executable EXAMPLE SOURCE)
 endfunction()
 
 # =========================== C++ 示例 ===========================
-foreach(EXAMPLE minimal stop_loss take_spread tick_to_trade make_cache)
+foreach(EXAMPLE minimal tick_to_order schedule_tasks make_cache)
     add_ctp_executable(${EXAMPLE} "examples/${EXAMPLE}.cpp")
 endforeach()
 

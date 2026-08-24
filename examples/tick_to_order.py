@@ -1,8 +1,9 @@
 import tinytrader as tt
 import statistics
 import time
+from simnow import *
 
-class TickToTrade(tt.Strategy):
+class TickToOrder(tt.Strategy):
 	def __init__(self):
 		super().__init__()
 		self.instrument = tt.Contract("rb2610")
@@ -53,7 +54,7 @@ class TickToTrade(tt.Strategy):
 		p95 = sorted_lat[int(n * 95 / 100)]
 		p99 = sorted_lat[int(n * 99 / 100)]
 
-		print("\n========== Tick-to-Trade 延迟统计 ==========")
+		print("\n========== Tick-to-Order 延迟统计 ==========")
 		print(f"样本数: {n}")
 		print(f"平均值: {avg:.1f} μs")
 		print(f"最小值: {min_lat} μs")
@@ -65,19 +66,6 @@ class TickToTrade(tt.Strategy):
 		print("============================================")
 
 
-def main():
-	config = tt.Config()
-	config.UserID = "12345678"
-	config.Password = "my_password"
-	config.AppID = "simnow_client_test"
-	config.AuthCode = "0000000000000000"
-	config.BrokerID = "9999"
-	config.TradeFront = "tcp://182.254.243.31:30002"
-	config.MarketFront = "tcp://182.254.243.31:30012"
-	config.CachePath = "D:/test/contracts.bin"
-
-	tt.AutoRun(config, TickToTrade)
-
-
 if __name__ == "__main__":
-	main()
+	config = simnow_config()
+	tt.AutoRun(config, TickToOrder)

@@ -1,8 +1,6 @@
 # TinyTrader —— Strategy to Live Trading in One Line
 
-**极简轻量，一行实盘。**
-
-TinyTrader 是一个基于 CTP 的 C++ 交易引擎，同时提供 Python 接口。支持单账户、单策略的期货与期权交易。
+TinyTrader 是一个直连 CTP 的交易引擎，使用 C++ 20 编写，同时提供 Python 接口。支持单账户、单策略的期货与期权交易。
 
 主要特点：
 
@@ -18,7 +16,7 @@ TinyTrader 是一个基于 CTP 的 C++ 交易引擎，同时提供 Python 接口
 pip install tinytrader
 ```
 
-**零依赖。** 不安装任何第三方包。支持 Python 3.9 至 3.13 版本。
+**零依赖。** 不安装任何第三方包。支持 Python 3.10 至 3.14 版本。
 
 一个完整的交易程序(`examples/minimal.py`)：启动后立即下单。
 
@@ -27,27 +25,25 @@ import tinytrader as tt
 
 class MyStrategy(tt.Strategy):
 	def OnStart(self):
-		order = tt.NewOrder()
-		order.Instrument = tt.Contract("rb2610")
-		order.Size = -2
-		order.Price = 4100
-		self.Insert(order)
+		self.Insert(tt.NewOrder(Instrument="rb2610", Size=-2, Price=4100))
 
 if __name__ == "__main__":
-	config = tt.Config()
-	config.UserID = "12345678"
-	config.Password = "my_password"
-	config.AppID = "simnow_client_test"
-	config.AuthCode = "0000000000000000"
-	config.BrokerID = "9999"
-	config.TradeFront = "tcp://182.254.243.31:30002"
-	config.MarketFront = "tcp://182.254.243.31:30012"
-	# 以上为 CTP 账号及地址
+	config = tt.Config(					# CTP 账号、地址
+		UserID = "12345678",
+		Password = "my_password",
+		BrokerID = "9999",
+		AppID = "simnow_client_test",
+		AuthCode = "0000000000000000",
+		TradeFront = "tcp://182.254.243.31:30002",
+		MarketFront = "tcp://182.254.243.31:30012",
+	)	
 
 	tt.AutoRun(config, MyStrategy)		# 一行启动
 ```
 
 策略启动后立即以 4100 的价格卖出 2 手 rb2610。`Size` 大于 0 为买单，小于 0 为卖单。开平标志默认自动(平仓优先)。
+
+如果使用 Simnow 模拟平台，只需修改 `UserID` 和 `Password` 即可运行。
 
 同样的功能，C++ 版 (`examples/minimal.cpp`)：
 
@@ -60,31 +56,27 @@ class MyStrategy : public Strategy
 {
 	void OnStart() override
 	{
-		NewOrder order;
-		order.Instrument = "rb2610";
-		order.Size = -2;
-		order.Price = 4100;
-		Insert(order);
+		Insert({ .Instrument = "rb2610", .Size = -2, .Price = 4100 });
 	}
 };
 
 int main()
 {
-	Config config;
-	config.UserID = "12345678";
-	config.Password = "my_password";
-	config.AppID = "simnow_client_test";
-	config.AuthCode = "0000000000000000";
-	config.BrokerID = "9999";
-	config.TradeFront = "tcp://182.254.243.31:30002";
-	config.MarketFront = "tcp://182.254.243.31:30012";
-	// 以上为 CTP 账号及地址
+	Config config{							// CTP 账号、地址
+		.UserID = "12345678",
+		.Password = "my_password",
+		.BrokerID = "9999",
+		.AppID = "simnow_client_test",
+		.AuthCode = "0000000000000000",
+		.TradeFront = "tcp://182.254.243.31:30002",
+		.MarketFront = "tcp://182.254.243.31:30012",
+	};
 
 	return AutoRun<MyStrategy>(config);		// 一行启动
 }
 ```
 
-和 Python 版一样简单！C++ 不仅速度更快，编译成二进制后可以更好地保护策略逻辑。
+C++ 20 写法和 Python 一样简洁！编译成二进制文件可以更好地保护策略。
 
 更多示例见 `examples` 目录，同时有 C++ 和 Python 版本。
 
@@ -97,7 +89,7 @@ int main()
 
 依赖项 CTP API 、fmtlib、fmtlog、magic_enum 均已包含在 third_party 目录中。
 
-编译器需支持 C++17 标准 (GCC 11.5 和 MSVC 2022 已测试)。
+编译器需支持 C++20 标准 (GCC 10.2 和 MSVC 2022 已测试)。
 
 进入 TinyTrader 代码目录，执行以下命令，即可生成所有示例程序。
 ```bash
@@ -109,14 +101,61 @@ cmake --build . --config Release
 
 如需调试版，将最后一行的 `Release` 改成 `Debug` 即可。
 
-如果使用 Visual Studio，还可以直接用 VS 打开文件夹，然后在菜单栏选择 "生成"->"全部生成"。
-
 如需从源码编译 Python 接口，可参考 `docs/build_python.md`。
 
+## 📦 策略接口
 
-## 📦 下单参数
+策略类必须继承自 `Strategy`，并按需覆写回调函数：
 
-`NewOrder` 包含全部下单参数：
+| 回调函数					| 参数									| 触发时机				|
+| :---						| :---									| :---					|
+| `OnStart()`				| —										| 策略启动时触发一次		|
+| `OnQuote(quote)`			| `quote`: 行情数据						| 每笔行情到达时			|
+| `OnOrder(order)`			| `order`: 订单数据						| 订单状态变化时			|
+| `OnTrade(trade, order)`	| `trade`: 成交数据，`order`: 关联订单	| 产生成交时				|
+
+### 计划任务
+
+TinyTrader 创新地为策略类设计了 `ScheduleTask` 接口，不仅可以实现定时任务，还可以**将耗时较大的任务放到两笔行情中间的空档期执行**，以免拖慢响应速度。
+示例见 `examples/schedule_tasks.py` 或 `examples/schedule_tasks.cpp`。
+
+| 参数		| Python 类型	| C++ 类型				| 说明						|
+| :---		| :---			| :---					| :---						|
+| delayMs	| int			| int					| 延迟执行时间（毫秒）		|
+| task		| Callable		| std::function<void()>	| 需要执行的任务函数（无参数）	|
+
+### 订阅行情
+
+只需通过 `SubscribeList` 函数返回合约列表，引擎就会自动订阅行情。之后每收到一笔新行情，`OnQuote` 函数就会被调用。
+
+**Python：**
+```python
+	def SubscribeList(self):
+		return [Contract("rb2610"), Contract("hc2610")]
+```
+
+**C++：**
+```cpp
+	std::vector<Contract> SubscribeList() const override
+	{ 
+		return {"rb2610", "hc2610"};
+	}
+```
+
+### 下单
+
+**Python：**
+```python
+def Insert(self, order: NewOrder):				# 发送成功返回 Order 失败 None
+	pass
+```
+
+**C++：**
+```c++
+const Order* Insert(const NewOrder& order);		// 发送失败返回空指针
+```
+
+下单参数通过结构体 `NewOrder` 传递，明确字段名，以防顺序写错：
 
 | 字段			| 类型			| 说明								|
 | :---			| :---			| :---								|
@@ -146,26 +185,16 @@ cmake --build . --config Release
 
 上期所和能源中心明确区分平今平昨，如果使用 `Auto`，会根据现有仓位按照平今、平昨、开仓的优先级进行设置。
 
+### 撤单
 **Python：**
 ```python
-order = tt.NewOrder()
-order.Instrument = tt.Contract("rb2610")
-order.Size = -2           # 卖 2 手
-order.Price = 4100
-order.Type = tt.OrderType.FAK
-order.Flag = tt.TradeFlag.Auto
-self.Insert(order)
+def Cancel(self, order: Order):					# 发送成功返回 True 失败 False
+	pass
 ```
 
 **C++：**
 ```c++
-NewOrder order;
-order.Instrument = "rb2610";
-order.Size = -2;
-order.Price = 4100;
-order.Type = OrderType::FAK;
-order.Flag = TradeFlag::Auto;
-Insert(order);
+bool Cancel(const Order& order);				// 发送成功返回 true 失败  false
 ```
 
 ## 📦 订单生命周期
@@ -254,66 +283,6 @@ void OnOrder(const Order& o) override
 }
 ```
 
-## 📦 策略接口
-
-策略类必须继承自 `Strategy`，并按需覆写回调函数：
-
-| 回调函数					| 参数									| 触发时机						|
-| :---						| :---									| :---							|
-| `SubscribeList()`			| —										| 返回合约列表，引擎自动订阅行情	|
-| `OnStart()`				| —										| 策略启动时触发一次				|
-| `OnTimer()`				| —										| 定时触发，间隔可配置			|
-| `OnQuote(quote)`			| `quote`: 行情数据						| 每笔行情到达时					|
-| `OnOrder(order)`			| `order`: 订单数据						| 订单状态变化时					|
-| `OnTrade(trade, order)`	| `trade`: 成交数据，`order`: 关联订单	| 产生成交时						|
-
-### 订阅行情
-
-**Python：**
-```python
-	def SubscribeList(self):
-		return [tt.Contract("rb2610"), tt.Contract("hc2610")]
-```
-
-**C++：**
-```cpp
-	std::vector<Contract> SubscribeList() const override
-	{ 
-		return {"rb2610", "hc2610"};
-	}
-```
-
-订阅后，每收到一笔新行情，引擎就会自动调用 `OnQuote` 函数。
-
-### 下单
-
-**Python：**
-```python
-# 发送成功返回 Order 失败 None，开平标志若为 Auto 会被重设
-def Insert(self, order: NewOrder):
-	pass
-```
-
-**C++：**
-```c++
-// 发送失败返回空指针，开平标志若为 Auto 会被重设
-const Order* Insert(NewOrder& order);
-```
-
-### 撤单
-**Python：**
-```python
-# 发送成功返回 True 失败 False
-def Cancel(self, order: Order):       
-	pass
-```
-
-**C++：**
-```c++
-// 发送成功返回 true 失败  false
-bool Cancel(const Order& order);
-```
-
 ## 📦 自由函数
 
 | 函数					| 功能						| 说明									|
@@ -326,9 +295,9 @@ bool Cancel(const Order& order);
 | `GetQuote`			| 获取最新行情				| 无需柜台查询							|
 | `InitEngine`			| 初始化交易引擎				| 完成后才可创建策略对象					|
 | `Run`					| 订阅行情并启动策略			| 不返回									|
-| `AutoRun`				| 一行启动策略				| 										|
+| `AutoRun`				| 一行启动策略				| 无异常不返回							|
 | `MakeCache`			| 创建合约信息缓存			| 路径由配置项 `CachePath` 指定			|
-| `logd/logi/logw/loge`	| 写日志						| fmtlog 提供							|
+| `logd/logi/logw/loge`	| 写日志						| fmtlog								|
 
 如果不使用 `AutoRun`，选择分开调用 `InitEngine` 和 `Run`，应当在 `InitEngine` 之后才创建策略对象，因为初始化之前 `Contract` 不可用，而策略类又必然需要合约。
 
@@ -344,7 +313,6 @@ Python 版不易缺失，因为 Python 解释器会捕获 C++ 的异常再转换
 | `LogPath` 		| 日志路径			| 空			| 默认打印到屏幕									|
 | `CachePath` 		| 合约信息缓存路径	| 空			| 读取成功则不向柜台查询合约信息					|
 | `MaxOrderCount` 	| 订单笔数上限		| 1000		| 设小可防止 bug 导致疯狂下单						|
-| `TimerInterval`	| 定时器时间间隔		| 100		| 单位为 ms，实际时间会受操作系统影响				|
 | `SleepOnIdle`		| 空闲时短暂休眠		| false		| 延迟不敏感场景可设为 true 以免占满一个 CPU 核		|
 
 ## 📦 FAQ

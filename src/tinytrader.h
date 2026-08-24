@@ -92,11 +92,6 @@ namespace tinytrader
 			return Status == OrderStatus::Filled || Status == OrderStatus::Canceled || Status == OrderStatus::Rejected;
 		}
 
-		bool Cancelable() const						// 是否可撤
-		{
-			return Status == OrderStatus::Queuing && !Canceling;
-		}
-
 		double AveragePrice() const					// 成交均价
 		{
 			return TradedSize ? TradedValue / abs(TradedSize * Instrument.Multiplier()) : 0.0;
@@ -119,34 +114,34 @@ namespace tinytrader
 
 	class Strategy
 	{
-	protected:
-		static const Order* Insert(NewOrder& newOrder);			// 下单
+	public:
+		static const Order* Insert(const NewOrder& newOrder);	// 下单
 		static bool Cancel(const Order& order);					// 撤单
 
-	public:
 		// 行情订阅列表，默认不订阅
 		virtual std::vector<Contract> SubscribeList() const	{ return {}; }	
 		virtual void OnStart() {}								// 启动时触发
-		virtual void OnTimer() {}								// 定时器触发
 		virtual void OnQuote(const Quote& q) {}					// 行情数据触发
 		virtual void OnOrder(const Order& o) {}					// 订单回报触发
 		virtual void OnTrade(const Trade& t, const Order& o) {}	// 成交回报触发
+
+		// 计划任务，可将耗时操作放到两笔行情间的空档期执行
+		void ScheduleTask(int delayMs, std::function<void()> task);
 	};
 
 	struct Config
 	{
 		std::string UserID;				// 资金账号
 		std::string Password;			// 密码
+		std::string BrokerID;			// 经纪公司代码
 		std::string AppID;				// App代码
 		std::string AuthCode;			// 认证码
-		std::string BrokerID;			// 经纪公司代码
 		std::string TradeFront;			// 交易前置地址
 		std::string MarketFront;		// 行情前置地址
 
 		std::string LogPath;			// 日志文件路径
 		std::string CachePath;			// 合约信息缓存路径
 		int MaxOrderCount = 1000;		// 订单笔数上限
-		int TimerInterval = 100;		// 定时器间隔(ms)
 		bool SleepOnIdle = false;		// 空闲时短暂休眠
 	};
 
