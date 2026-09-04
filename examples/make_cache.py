@@ -1,6 +1,6 @@
-import tinytrader as tt
-from simnow import *
+from tinytrader import MakeCache
+from simnow import SimnowConfig
 
 if __name__ == "__main__":
-	config = simnow_config()
-	tt.MakeCache(config)
+    config = SimnowConfig()
+    MakeCache(config)

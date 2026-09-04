@@ -51,7 +51,7 @@ function(add_ctp_executable EXAMPLE SOURCE)
 endfunction()
 
 # =========================== C++ 示例 ===========================
-foreach(EXAMPLE minimal tick_to_order schedule_tasks make_cache)
+foreach(EXAMPLE minimal tick_to_order delay_tasks make_cache dual_moving_average)
     add_ctp_executable(${EXAMPLE} "examples/${EXAMPLE}.cpp")
 endforeach()
 

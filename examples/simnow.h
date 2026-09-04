@@ -1,6 +1,8 @@
+#pragma once
+
 #include "tinytrader.h"
 
-namespace {
+namespace tinytrader {
 	auto GetEnviromentVariable(const std::string& key)
 	{
 		const char* value = std::getenv(key.c_str());

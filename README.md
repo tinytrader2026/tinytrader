@@ -2,13 +2,20 @@
 
 TinyTrader 是一个直连 CTP 的交易引擎，使用 C++ 20 编写，同时提供 Python 接口。支持单账户、单策略的期货与期权交易。
 
-主要特点：
+**TinyTrader 适合谁？**
 
-- **极简**————无抽象概念、无配置文件，写好策略、填上账号，一行代码启动实盘。
+- 想用 Python 写策略，但是不喜欢架构复杂的大型框架
+- 想用 C++ 写策略，但受够了柜台原生 API 的繁琐
+- 需要微秒级响应，而不是毫秒级
+- 不信任闭源黑盒，希望代码完全透明
 
+如果有一条以上符合你的想法，那么 TinyTrader 可能就是你需要的工具。
+
+**它做到了什么？**
+
+- **极简**————无需了解柜台接口，填上账号，一行代码即可将策略接入实盘。
 - **轻量**————核心代码不到 1000 行。
-
-- **快速**————单线程事件模型，全程无锁，微秒级响应。
+- **快速**————无锁，微秒级响应，Tick-to-Order 延迟中位数 C++ 4.5μs Python 8μs (普通 PC)。
 
 ## 📦 快速开始
 
@@ -21,29 +28,28 @@ pip install tinytrader
 一个完整的交易程序(`examples/minimal.py`)：启动后立即下单。
 
 ```python
-import tinytrader as tt
+from tinytrader import Strategy, NewOrder, Config, AutoRun
 
-class MyStrategy(tt.Strategy):
+class MyStrategy(Strategy):
 	def OnStart(self):
-		self.Insert(tt.NewOrder(Instrument="rb2610", Size=-2, Price=4100))
+		self.Insert(NewOrder(Instrument="rb2701", Size=-2, Price=4100))
 
 if __name__ == "__main__":
-	config = tt.Config(					# CTP 账号、地址
-		UserID = "12345678",
-		Password = "my_password",
-		BrokerID = "9999",
-		AppID = "simnow_client_test",
-		AuthCode = "0000000000000000",
-		TradeFront = "tcp://182.254.243.31:30002",
-		MarketFront = "tcp://182.254.243.31:30012",
-	)	
-
-	tt.AutoRun(config, MyStrategy)		# 一行启动
+	config = Config(                    # CTP 账号、地址
+		UserID="12345678",
+		Password="my_password",
+		BrokerID="9999",
+		AppID="simnow_client_test",
+		AuthCode="0000000000000000",
+		TradeFront="tcp://182.254.243.31:30002",
+		MarketFront="tcp://182.254.243.31:30012",
+	)
+	AutoRun(config, MyStrategy)         # 一行启动
 ```
 
-策略启动后立即以 4100 的价格卖出 2 手 rb2610。`Size` 大于 0 为买单，小于 0 为卖单。开平标志默认自动(平仓优先)。
+策略启动后立即以 4100 的价格卖出 2 手 rb2701。`Size` 大于 0 为买单，小于 0 为卖单。开平标志默认自动(平仓优先)。
 
-如果使用 Simnow 模拟平台，只需修改 `UserID` 和 `Password` 即可运行。
+如果使用 Simnow 模拟平台，修改 `UserID` 和 `Password` 即可运行。
 
 同样的功能，C++ 版 (`examples/minimal.cpp`)：
 
@@ -56,7 +62,7 @@ class MyStrategy : public Strategy
 {
 	void OnStart() override
 	{
-		Insert({ .Instrument = "rb2610", .Size = -2, .Price = 4100 });
+		Insert({ .Instrument = "rb2701", .Size = -2, .Price = 4100 });
 	}
 };
 
@@ -71,7 +77,6 @@ int main()
 		.TradeFront = "tcp://182.254.243.31:30002",
 		.MarketFront = "tcp://182.254.243.31:30012",
 	};
-
 	return AutoRun<MyStrategy>(config);		// 一行启动
 }
 ```
@@ -80,10 +85,61 @@ C++ 20 写法和 Python 一样简洁！编译成二进制文件可以更好地�
 
 更多示例见 `examples` 目录，同时有 C++ 和 Python 版本。
 
-## ⚠️ 安全警告 
+## 📦 策略接口
 
-示例程序为保持简洁，直接将账号密码写在代码中。**此举可能导致密码泄露**，实盘应尽量手动输入密码。
+| 接口 | 说明 |
+| :--- | :--- |
+| `Insert(NewOrder)` | 下单 |
+| `Cancel(Order)` | 撤单 |
+| `Subscribe(Contract)` | 订阅行情 |
+| `DelayTask(int, Callable)` | 延时执行任务，可放到行情空档期 |
+| `OnStart()` | 策略启动时触发 |
+| `OnQuote(Quote)` | 行情到达时触发 |
+| `OnOrder(Order)` | 订单状态变化时触发 |
+| `OnTrade(Trade, Order)` | 成交时触发 |
 
+### 延时任务
+
+`DelayTask(ms, task)` 可用于定时任务，也可将耗时操作放到两笔行情之间的空档期执行，避免拖慢行情响应。
+示例见 `examples/delay_tasks.py` 或 `examples/delay_tasks.cpp`。
+
+### 数据随时可用
+
+- `GetQuote(contract)`：获取指定合约的最新行情快照
+- `GetPosition(contract)`：获取单个合约持仓
+- `GetPositions()`：获取所有持仓
+
+所有数据由引擎实时维护，无需查询柜台，初始化以后随时可用。
+
+### 成交回调自带关联订单
+
+`OnTrade(trade, order)` 回调中直接携带关联的 `Order` 对象，无需手动查询订单状态。
+
+**📖 完整 API 参考：[docs/python-api.md](docs/python-api.md)**
+
+C++ 用户可直接参考头文件 `src/tinytrader.h`。
+
+## 📊 响应时间
+
+Tick-to-Trade 延迟中网络传输时间占了绝大部分，不能反映交易引擎的响应速度。
+
+普通 PC 机上实测 Tick-to-Order 延迟（从收到行情到发出委托）：
+
+| 指标 | C++ | Python |
+| :--- | ---: | ---: |
+| 平均值 | 4.7 μs | 8.3 μs |
+| 最小值 | 3.5 μs | 5 μs |
+| 最大值 | 12.1 μs | 58 μs |
+| P50 | 4.5 μs | 8 μs |
+| P90 | 5.6 μs | 10 μs |
+| P95 | 6.5 μs | 13 μs |
+| P99 | 10.1 μs | 17 μs |
+
+**测试平台：** Windows 10，AMD Ryzen 9 3900X（2019）。未绑核、未对操作系统进行调优，以贴近小白用户开箱即用的环境。
+
+**测试方法：** 在 `OnRtnDepthMarketData` 入口打时间戳（起点），在 `ReqOrderInsert` 返回后打时间戳（终点）。每次测试 300 笔委托，运行多次，选择 P99 居中的一组数据呈现（未选择最优数据）。
+
+测试程序见 `examples/tick_to_order.cpp` 及 `examples/tick_to_order.py`。
 
 ## 📦 C++ 编译
 
@@ -99,228 +155,32 @@ cmake ..
 cmake --build . --config Release
 ```
 
-如需调试版，将最后一行的 `Release` 改成 `Debug` 即可。
+如需调试版，将 `Release` 改成 `Debug` 即可。
 
 如需从源码编译 Python 接口，可参考 `docs/build_python.md`。
 
-## 📦 策略接口
-
-策略类必须继承自 `Strategy`，并按需覆写回调函数：
-
-| 回调函数					| 参数									| 触发时机				|
-| :---						| :---									| :---					|
-| `OnStart()`				| —										| 策略启动时触发一次		|
-| `OnQuote(quote)`			| `quote`: 行情数据						| 每笔行情到达时			|
-| `OnOrder(order)`			| `order`: 订单数据						| 订单状态变化时			|
-| `OnTrade(trade, order)`	| `trade`: 成交数据，`order`: 关联订单	| 产生成交时				|
-
-### 计划任务
-
-TinyTrader 创新地为策略类设计了 `ScheduleTask` 接口，不仅可以实现定时任务，还可以**将耗时较大的任务放到两笔行情中间的空档期执行**，以免拖慢响应速度。
-示例见 `examples/schedule_tasks.py` 或 `examples/schedule_tasks.cpp`。
-
-| 参数		| Python 类型	| C++ 类型				| 说明						|
-| :---		| :---			| :---					| :---						|
-| delayMs	| int			| int					| 延迟执行时间（毫秒）		|
-| task		| Callable		| std::function<void()>	| 需要执行的任务函数（无参数）	|
-
-### 订阅行情
-
-只需通过 `SubscribeList` 函数返回合约列表，引擎就会自动订阅行情。之后每收到一笔新行情，`OnQuote` 函数就会被调用。
-
-**Python：**
-```python
-	def SubscribeList(self):
-		return [Contract("rb2610"), Contract("hc2610")]
-```
-
-**C++：**
-```cpp
-	std::vector<Contract> SubscribeList() const override
-	{ 
-		return {"rb2610", "hc2610"};
-	}
-```
-
-### 下单
-
-**Python：**
-```python
-def Insert(self, order: NewOrder):				# 发送成功返回 Order 失败 None
-	pass
-```
-
-**C++：**
-```c++
-const Order* Insert(const NewOrder& order);		// 发送失败返回空指针
-```
-
-下单参数通过结构体 `NewOrder` 传递，明确字段名，以防顺序写错：
-
-| 字段			| 类型			| 说明								|
-| :---			| :---			| :---								|
-| `Instrument`	| `Contract`	| 合约，如 `"rb2610"`				|
-| `Size`		| `int`			| 委托量，**正=买，负=卖**			|
-| `Price`		| 浮点数			| 价格								|
-| `Type`		| `OrderType`	| 订单类型，默认 `GFD`（单日有效）		|
-| `Flag`		| `TradeFlag`	| 开平标志，默认 `Auto`（自动开平）	|
-
-**订单类型：**
-
-| 类型	| 说明					|
-| :---	| :---					|
-| `GFD` | 单日有效				|
-| `FAK` | 立即成交剩余撤销		|
-| `FOK` | 立即全部成交否则撤销	|
-
-**开平标志：**
-
-| 标志				| 说明					|
-| :---				| :---					|
-| `Auto`			| 自动开平（平仓优先）	|
-| `Open`			| 开仓					|
-| `Close`			| 平仓					|
-| `CloseToday`		| 平今					|
-| `CloseYesterday`	| 平昨					|
-
-上期所和能源中心明确区分平今平昨，如果使用 `Auto`，会根据现有仓位按照平今、平昨、开仓的优先级进行设置。
-
-### 撤单
-**Python：**
-```python
-def Cancel(self, order: Order):					# 发送成功返回 True 失败 False
-	pass
-```
-
-**C++：**
-```c++
-bool Cancel(const Order& order);				// 发送成功返回 true 失败  false
-```
-
-## 📦 订单生命周期
-
-订单主要有以下几种状态，由枚举类型 `OrderStatus` 表示：
-
-| 状态		| 说明							|
-| :---		| :---							|
-| `Sent`	| 已向柜台发送					|
-| `Queuing` | 处于交易所队列中（含部分成交）	|
-| `Filled`	| 全部成交						|
-| `Canceled`| 已撤单							|
-| `Rejected`| 被柜台或交易所拒绝				|
-
-`Insert` 函数调用成功，即产生新的订单，其状态为初始值 `Sent`。
-
-如果下单成功，订单状态会变成 `Queuing`，直到全部成交(变成 `Filled`)或撤单成功(变成 `Canceled`)。部分成交并不改变订单的状态，仍为 `Queuing`。
-
-如果下单失败，订单状态会从 `Sent` 直接变成 `Rejected`。
-
-```mermaid
-stateDiagram-v2
-	[*] --> Sent: Insert()
-	Sent --> Queuing: 柜台和交易所均接受
-	Sent --> Rejected: 柜台或交易所拒绝
-	Queuing --> Filled: 全部成交
-	Queuing --> Canceled: 撤单成功
-	Filled --> [*]
-	Canceled --> [*]
-	Rejected --> [*]
-```
-
-## 📦 订单字段
-
-`Order` 对象由引擎自动创建和维护，策略中只能查看，不能修改。
-
-| 字段			| 类型			| 说明								|
-| :---			| :---			| :---								|
-| `Instrument`	| `Contract`	| 合约								|
-| `Size`		| `int`			| 委托量（正=买，负=卖）				|
-| `Price`		| 浮点数			| 价格								|
-| `Type`		| `OrderType`	| 订单类型							|
-| `Flag`		| `TradeFlag`	| 开平标志							|
-| `Status`		| `OrderStatus` | 订单状态（见下方）					|
-| `Canceling`	| `bool`		| 是否有撤单指令在途					|
-| `Error`		| `int`			| 错误码，0 表示正常					|	
-| `FilledSize`	| `int`			| 已成交数量（带方向）				|
-| `TradedSize`	| `int`			| 已成交数量（成交回报累计，带方向）	|
-| `TradedValue` | 浮点数			| 成交金额（累计）					|
-
-卖单的 `Size`、`FilledSize` 和 `TradedSize` 都是负值，买单都是正值。
-
-订单不同状态对应的字段值：
-
-| 状态描述		| `Status`		| `FilledSize`				| `Error`	|
-| :---			| :---			| :---						| :---		| 
-| 已发送 		| `Sent`		| 0							| 0			|
-| 下单成功 		| `Queuing`		| 0							| 0			|
-| 部分成交 		| `Queuing`		| 非 0 且不等于 `Size`		| 0			|
-| 全部成交 		| `Filled`		| 等于 `Size	`				| 0			|
-| 撤单成功 		| `Canceled`	| 可能为 0，一定不等于 `Size`	| 0			|
-| 下单失败 		| `Rejected`	| 0							| 非 0		|
-
-**`FilledSize` 与 `TradedSize` 的区别：**
-
-- `FilledSize`：来自订单状态回报，反映当前成交数量
-- `TradedSize`：来自成交回报，逐笔累计
-
-两者来自不同的回报消息，可能出现短暂不一致，最终会收敛于同一个值。
-
-**Python：**
-```python
-def OnOrder(self, o: tt.Order):
-	# 防止重复撤单
-	if o.Status == tt.OrderStatus.Queuing and not o.Canceling:
-		self.Cancel(o)
-```
-
-**C++：**
-```c++
-void OnOrder(const Order& o) override
-{
-	// 防止重复撤单
-	if (o.Status == OrderStatus::Queuing && !o.Canceling)
-		Cancel(&o);
-}
-```
-
-## 📦 自由函数
-
-| 函数					| 功能						| 说明									|
-| :---					| :---						| :---									|
-| `Now` 				| 获取当前时间				| 北京时间								|
-| `TodayAt` 			| 获取当日指定时间			| 入参应为 HH:MM:SS 格式，不检查			|
-| `TradingDay`			| 获取交易日					| 18 点前返回当日否则次日，周末顺延至周一	|
-| `GetPosition`			| 获取单个合约的持仓			| 无需柜台查询							|
-| `GetPositions`		| 获取所有持仓				| 无需柜台查询							|
-| `GetQuote`			| 获取最新行情				| 无需柜台查询							|
-| `InitEngine`			| 初始化交易引擎				| 完成后才可创建策略对象					|
-| `Run`					| 订阅行情并启动策略			| 不返回									|
-| `AutoRun`				| 一行启动策略				| 无异常不返回							|
-| `MakeCache`			| 创建合约信息缓存			| 路径由配置项 `CachePath` 指定			|
-| `logd/logi/logw/loge`	| 写日志						| fmtlog								|
-
-如果不使用 `AutoRun`，选择分开调用 `InitEngine` 和 `Run`，应当在 `InitEngine` 之后才创建策略对象，因为初始化之前 `Contract` 不可用，而策略类又必然需要合约。
-
-对于 C++ 版，还应规范使用 `try catch`，以防异常导致日志缺失。
-Python 版不易缺失，因为 Python 解释器会捕获 C++ 的异常再转换成脚本层面的异常。Python 脚本抛异常退出，在操作系统看来仍然是进程正常结束。
-
-## 📦 配置项
-
-除了 CTP 账号及地址信息，`Config` 还有以下字段：
-
-| 参数				| 含义				| 默认值		| 说明											|
-| :---				| :---				| :---		| :---											|
-| `LogPath` 		| 日志路径			| 空			| 默认打印到屏幕									|
-| `CachePath` 		| 合约信息缓存路径	| 空			| 读取成功则不向柜台查询合约信息					|
-| `MaxOrderCount` 	| 订单笔数上限		| 1000		| 设小可防止 bug 导致疯狂下单						|
-| `SleepOnIdle`		| 空闲时短暂休眠		| false		| 延迟不敏感场景可设为 true 以免占满一个 CPU 核		|
-
 ## 📦 FAQ
+
+### Q: 在快期等客户端进行操作，是否会影响 TinyTrader 正在运行的策略？
+
+A: 正常情况 TinyTrader 不会被客户端操作所干扰，具体反应如下：
+
+| 客户端操作				| TinyTrader 的反应							|
+|:---					|:---										|
+| 撤销 TinyTrader 的订单	| 继续执行策略撤单后的逻辑（如追单）			|
+| 客户端手动下单			| 忽略该订单，不触发 `OnOrder`				|
+| 客户端订单成交			| 仅更新持仓数据，不触发 `OnOrder`、`OnTrade`	|
 
 ### Q: 成交发生时，策略类的 `OnOrder` 和 `OnTrade` 都会被触发，先后顺序是确定的吗？
 
 A: 成交发生时，引擎既会收到订单回报(立即触发 `OnOrder`)，也会收到成交回报(立即触发 `OnTrade`)。
 一般来说，订单回报会排在前面，即 `OnOrder` 会先触发，据此操作会更快。但是消息的先后顺序取决于交易所的消息机制，并不是确定不变的。
+
+### Q: 每次启动都要查询合约信息，有时侯特别慢，能否加速？
+
+A: 查询合约信息的数据量较大，柜台可能限流，导致查询异常缓慢。可以创建一个工具程序，在每个交易日首次启动 TinyTrader 之前，进行一次合约信息查询，并将结果写入缓存文件。
+缓存路径由配置项 `CachePath` 指定。示例见 `examples/make_cache.cpp` 或 `examples/make_cache.py`。
+交易引擎初始化时将优先从 `CachePath` 指定的文件读取合约信息，读取失败才向柜台查询。这样就可以加速启动，同时减轻柜台的查询压力。
 
 ### Q: 如何查看 `TimePoint` 的值？
 
@@ -337,20 +197,12 @@ fmt::print("{:%T}", floor<nanoseconds>(tp));	// HH:MM:SS.xxxxxxxxx
 
 Python 版本用 `datetime` 表示时间，精度为微秒，可使用 `strftime` 进行格式化。
 
-### Q: 在快期等客户端进行操作，是否会影响 TinyTrader 正在运行的策略？
+### Q: 日志中出现 `ErrorID`，如何查看具体含义？
 
-A: 正常情况 TinyTrader 不会被客户端操作所干扰，具体反应如下：
+A: 可查看 `third_party/CTP-6.7.11/error.xml` 获取错误码对应的信息。
 
-| 客户端操作				| TinyTrader 的反应					|
-|:---					|:---								|
-| 撤销 TinyTrader 的订单	| 继续执行策略撤单后的逻辑（如追单）	|
-| 客户端手动下单			| 忽略该订单，不触发 `OnOrder`		|
-| 客户端订单成交			| 仅更新持仓数据，不触发 `OnTrade`		|
+## 📦 联系方式
 
-### Q: 每次启动都要查询合约信息，有时侯特别慢，能否加速？
-
-A: 查询合约信息的数据量较大，柜台可能限流，导致查询异常缓慢。可以创建一个工具程序，在每个交易日首次启动 TinyTrader 之前，进行一次合约信息查询，并将结果写入缓存文件。
-缓存路径由配置项 `CachePath` 指定。示例见 `examples/make_cache.cpp` 或 `examples/make_cache.py`。
-交易引擎初始化时将优先从 `CachePath` 指定的文件读取合约信息，读取失败才向柜台查询。这样就可以加速启动，同时减轻柜台的查询压力。
+有任何问题，请联系 `tinytrader@163.com`。
 
 

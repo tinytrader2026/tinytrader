@@ -1,8 +1,8 @@
 import os
-import tinytrader
+from tinytrader import Config
 
-def simnow_config():
-	return tinytrader.Config(
+def SimnowConfig():
+	return Config(
 		UserID = os.getenv("SIMNOW_USERID", ""),
 		Password = os.getenv("SIMNOW_PASSWORD", ""),
 		BrokerID = "9999",

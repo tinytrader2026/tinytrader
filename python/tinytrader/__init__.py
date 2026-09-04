@@ -2,6 +2,7 @@
 TinyTrader - Lightweight C++ trading engine with Python bindings
 """
 
+from datetime import datetime
 import sys
 import importlib.util
 import os
@@ -104,6 +105,19 @@ def _order_eq(self, other):
 Order.__eq__ = _order_eq
 
 
+
+def TimeAt(time: str, tp: datetime = Now()):
+	"""获取指定时间的时间戳。
+	Args:
+		time (str): 时间字符串，格式 "HH:MM:SS"
+	Returns:
+		datetime: 当日指定时间点
+	"""
+	h, m, s = map(int, time.split(':'))
+	return tp.replace(hour=h, minute=m, second=s, microsecond=0)
+
+
+
 def AutoRun(config, strategy_class, *args, **kwargs):
 	"""初始化引擎、创建策略并运行"""
 	InitEngine(config)
@@ -118,7 +132,7 @@ Contract.__doc__ = """
 合约对象。
 
 用法：
-	c = Contract("rb2610")
+	c = Contract("rb2701")
 
 方法：
 	Code() -> str: 合约代码
@@ -128,8 +142,8 @@ Contract.__doc__ = """
 	ToTicks(price: float) -> int: 将价格转换为跳数
 
 示例：
-	c = Contract("rb2610")
-	print(c.Code())        # "rb2610"
+	c = Contract("rb2701")
+	print(c.Code())        # "rb2701"
 	print(c.Exchange())    # SHFE
 	print(c.TickSize())    # 1.0
 """
@@ -147,8 +161,8 @@ Quote.__doc__ = """
 	AskSize1 (int): 卖一量
 	Turnover (float): 成交金额
 	OpenInterest (float): 持仓量
-	MarketTime (datetime.datetime): 交易所时间
-	ReceiveTime (datetime.datetime): 本地接收时间
+	MarketTime (datetime): 交易所时间
+	ReceiveTime (datetime): 本地接收时间
 	UpperLimitPrice (float): 涨停价
 	LowerLimitPrice (float): 跌停价
 """
@@ -162,12 +176,6 @@ NewOrder.__doc__ = """
 	Price (float): 委托价格
 	Type (OrderType): 订单类型
 	Flag (TradeFlag): 开平标志
-
-示例：
-	order = NewOrder()
-	order.Instrument = Contract("rb2610")
-	order.Size = -2
-	order.Price = 4100
 """
 
 Order.__doc__ = """
@@ -176,6 +184,7 @@ Order.__doc__ = """
 额外字段：
 	Status (OrderStatus): 订单状态
 	Canceling (bool): 是否有撤单指令在途
+	SendTime (datetime): 下单时间
 	Ref (int): 订单索引
 	Error (OrderError): 错误码，0 表示无错误
 	FilledSize (int): 已成交数量（带方向）
