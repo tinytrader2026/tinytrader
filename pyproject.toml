@@ -1,6 +1,6 @@
 [project]
 name = "tinytrader"
-version = "0.3.0"
+version = "0.4.0"
 description = "Light Weight C++ Trading Engine with Python Binding"
 authors = [{name = "tinytrader", email = "tinytrader@163.com"}]
 license = {text = "MIT"}

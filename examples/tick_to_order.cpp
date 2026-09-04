@@ -8,16 +8,46 @@ using namespace tinytrader;
 namespace {		// 使用匿名命名空间，防止名称冲突
 	class TickToOrder : public Strategy		// 收到行情立即下单，以测试内部延迟
 	{
-		Contract mInstrument = "rb2610";
-		vector<nanoseconds> mLatencies;
-		bool mFinished = false;
-		size_t mSampleCount = 300;
-
-		void Report()
+	public:
+		TickToOrder(Contract c)
 		{
-			if (mLatencies.empty())
+			mInstrument = c;
+			Subscribe(mInstrument);
+			fmt::print("Subscribe {}\n", c);
+		}
+
+		void OnQuote(const Quote& q) override
+		{
+			if (!q.BidSize1 || !q.AskSize1)		// 涨跌停不下单
 				return;
 
+			if (mLatencies.size() < mSampleCount) {
+				const Order* order = Insert({
+					.Instrument = mInstrument,
+					.Size = 1,
+					.Price = q.LowerLimitPrice,
+					.Flag = TradeFlag::Open
+				});
+				if (order) {
+					// ReceiveTime 为 OnRtnDepthMarketData 第一行的时间戳
+					// SendTime 为 ReqOrderInsert 完成后的时间戳
+					mLatencies.push_back(order->SendTime - q.ReceiveTime);
+					fmt::print("{:>03d}: {:>05.1f} us\n", mLatencies.size(), mLatencies.back().count() / 1000.0);
+				}
+			}
+		}
+
+		void OnOrder(const Order& order) override
+		{
+			if (order.Status == OrderStatus::Queuing && !order.Canceling)
+				Cancel(order);
+			else if (order.Terminated() && mLatencies.size() == mSampleCount)
+				Report();
+		}
+
+	private:
+		void Report()
+		{
 			sort(mLatencies.begin(), mLatencies.end());
 			size_t n = mLatencies.size();
 			auto to_us = [](nanoseconds ns) -> double {	return ns.count() / 1000.0;	};
@@ -43,40 +73,9 @@ namespace {		// 使用匿名命名空间，防止名称冲突
 			fmt::print("============================================\n");
 		}
 
-	public:
-		vector<Contract> SubscribeList() const override
-		{
-			return { mInstrument };
-		}
-
-		void OnStart() override
-		{
-			fmt::print("{}\n", "OnStart");
-		}
-
-		void OnQuote(const Quote& q) override
-		{
-			if (!q.BidSize1 || !q.AskSize1)		// 涨跌停不下单
-				return;
-
-			if (mLatencies.size() < mSampleCount) {
-				NewOrder newOrder;
-				newOrder.Instrument = mInstrument;
-				newOrder.Size = 1;
-				newOrder.Price = q.LowerLimitPrice;	// 用跌停价买入，防止成交
-				//newOrder.Type = OrderType::FOK;	// 使用 FOK 则无需 Cancel
-				const Order* order = Insert(newOrder);
-
-				mLatencies.push_back(Now() - q.ReceiveTime);
-				if (order)
-					Cancel(*order);
-			}
-
-			if (!mFinished && mLatencies.size() == mSampleCount) {
-				Report();
-				mFinished = true;
-			}
-		}
+		Contract mInstrument;
+		vector<nanoseconds> mLatencies;
+		size_t mSampleCount = 300;
 	};
 }
 
@@ -84,5 +83,6 @@ namespace {		// 使用匿名命名空间，防止名称冲突
 int main()
 {
 	Config config = SimnowConfig();
-	return AutoRun<TickToOrder>(config);
+	config.LogPath = TradingDay() + ".log";
+	return AutoRun<TickToOrder>(config, "rb2701");
 }

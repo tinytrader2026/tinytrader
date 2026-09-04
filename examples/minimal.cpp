@@ -7,7 +7,7 @@ class MyStrategy : public Strategy
 	void OnStart() override				// 策略启动时执行
 	{
 		// Size正值为买，负值为卖
-		Insert({ .Instrument = "rb2610", .Size = -2, .Price = 4100 });
+		Insert({ .Instrument = "rb2701", .Size = -2, .Price = 4100 });
 	}
 };
 

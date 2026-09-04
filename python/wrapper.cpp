@@ -32,13 +32,7 @@ namespace {
 
 	struct PyStrategy : public Strategy
 	{
-		NB_TRAMPOLINE(Strategy, 5);
-
-		vector<Contract> SubscribeList() const override
-		{
-			NB_OVERRIDE(SubscribeList);
-			return Strategy::SubscribeList();
-		}
+		NB_TRAMPOLINE(Strategy, 4);
 
 		void OnStart() override
 		{
@@ -70,12 +64,12 @@ NB_MODULE(_tinytrader, m) {
 		.def(nb::init<>())
 		.def_static("Insert", &Strategy::Insert, nb::rv_policy::reference)
 		.def_static("Cancel", &Strategy::Cancel)
-		.def("SubscribeList", [](const Strategy& self) { return self.SubscribeList(); })
+		.def("Subscribe", &Strategy::Subscribe)
+		.def("DelayTask", &Strategy::DelayTask)
 		.def("OnStart", &Strategy::OnStart)
 		.def("OnQuote", &Strategy::OnQuote)
 		.def("OnOrder", &Strategy::OnOrder)
-		.def("OnTrade", &Strategy::OnTrade)
-		.def("ScheduleTask", &Strategy::ScheduleTask);
+		.def("OnTrade", &Strategy::OnTrade);
 
 	// =========================== 枚举 ===========================
 	nb::enum_<Market>(m, "Market", "交易所枚举")
@@ -171,6 +165,7 @@ NB_MODULE(_tinytrader, m) {
 		.def_ro("Status", &Order::Status)
 		.def_ro("Error", &Order::Error)
 		.def_ro("Canceling", &Order::Canceling)
+		.def_prop_ro("SendTime", [](const Order& self) { return self.SendTime - TZOFFSET; })
 		.def_ro("Ref", &Order::Ref)
 		.def_ro("FilledSize", &Order::FilledSize)
 		.def_ro("TradedSize", &Order::TradedSize)
@@ -233,13 +228,6 @@ NB_MODULE(_tinytrader, m) {
 
 	// =========================== 自由函数 ===========================
 	m.def("Now", [] { return Now() - TZOFFSET; }, "当前北京时间");
-	m.def("TodayAt", [](const string& time) { return TodayAt(time) - TZOFFSET; }, R"doc(
-获取当日指定时间点。
-Args:
-	time (str): 时间字符串，格式 "HH:MM:SS"
-Returns:
-	datetime.datetime: 当日指定时间点
-)doc");
 
 	m.def("TradingDay", &TradingDay, R"doc(
 获取当前交易日。
